@@ -76,9 +76,16 @@ python eval_assistant.py
 
 **Example 1: Senior dog with arthritis**
 - Input: `Biscuit, dog, age 12, special needs: arthritis`
-- Retrieved notes: TODO
-- AI suggestions: TODO
-- Guardrail result: TODO
+- Retrieved notes: `arthritis.md`, `dog.md`, `senior_pets.md`
+- AI suggestions: 9 tasks
+  - Short slow walk, 15 min, high (x3)
+  - Feeding, 10 min, high (x2)
+  - Refill and rinse water bowl, 5 min, medium
+  - Enrichment activity, 10 min, medium
+  - Brush hips and back, 5 min, medium
+  - Health monitoring note, 5 min, low
+- Guardrail result: 9 accepted, 0 rejected
+- Observation: the suggestions matched the senior and arthritis guidance (short, low-impact walks and gentle brushing). However, repeated tasks came back with identical titles, so I added a guardrail that labels duplicates by time of day or number, e.g. "Short slow walk (morning)" or "Feeding 1/2".
 
 **Example 2: Young cat, no special needs**
 - Input: `Luna, cat, age 1`

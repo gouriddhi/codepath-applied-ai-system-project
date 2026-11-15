@@ -33,6 +33,7 @@ CATEGORIES = {"walk", "feeding", "meds", "enrichment", "grooming", "other"}
 PREFERRED_TIMES = {"morning", "afternoon", "evening"}
 FREQUENCIES = {"daily", "weekly", "once"}
 MIN_DURATION, MAX_DURATION = 1, 240
+LOW_CONFIDENCE = 0.6  # below this, the UI labels a suggestion "low confidence"
 REQUIRED_FIELDS = (
     "title", "duration_minutes", "priority", "category",
     "preferred_time", "frequency", "reason", "confidence",
@@ -80,6 +81,7 @@ class CareSuggestionResult:
     retrieved_notes: list[str] = field(default_factory=list)
     accepted: list[Task] = field(default_factory=list)
     rejected: list[dict] = field(default_factory=list)  # {"suggestion": ..., "reason": ...}
+    details: dict[str, dict] = field(default_factory=dict)  # task_id -> {"reason", "confidence"}
     error: Optional[str] = None
     model_message: Optional[str] = None  # e.g. the model saying the notes don't cover this pet
 
@@ -147,11 +149,20 @@ def _normalize(word: str) -> str:
     return word[:-1] if len(word) > 3 and word.endswith("s") else word
 
 
+# Filler words that must never cause a match on their own. Without this, an owner typing
+# "no special needs" matched arthritis.md's "special-needs" tag.
+IGNORED_NEED_WORDS = {"no", "none", "n/a", "na", "nothing", "special", "need", "needs", "general"}
+
+
+def _need_words(text: str) -> set[str]:
+    """Meaningful, normalized words in a need or tag ("joint pain" -> {"joint", "pain"})."""
+    words = {_normalize(w) for w in text.replace("-", " ").replace("/", " ").split()}
+    return {w for w in words if w and w not in IGNORED_NEED_WORDS}
+
+
 def _need_matches_tag(need: str, tag: str) -> bool:
-    """True if a special need and a tag share a word, e.g. "joint pain" ~ "pain"."""
-    need_words = {_normalize(w) for w in need.replace("-", " ").split()}
-    tag_words = {_normalize(w) for w in tag.replace("-", " ").split()}
-    return bool(need_words & tag_words)
+    """True if a special need and a tag share a meaningful word, e.g. "joint pain" ~ "pain"."""
+    return bool(_need_words(need) & _need_words(tag))
 
 
 def wanted_tags(pet: Pet) -> set[str]:
@@ -168,7 +179,8 @@ def retrieve_notes(pet: Pet, notes: Optional[list[Note]] = None) -> list[Note]:
     notes = load_notes() if notes is None else notes
     species = pet.species.strip().lower()
     tags = wanted_tags(pet)
-    needs = [n for n in pet.special_needs if n.strip()]
+    # Ignore blank entries and ones made only of filler words ("", "  ", "none", "no special needs").
+    needs = [n.strip() for n in pet.special_needs if isinstance(n, str) and _need_words(n)]
 
     matched = []
     for note in notes:
@@ -192,6 +204,16 @@ Rules:
 - Every task must be directly supported by the notes. Do not use outside knowledge or guess.
 - If the notes do not cover this pet, return an empty "tasks" list and explain why in "message".
 - Do not suggest specific drugs or doses; a meds task should say to follow the vet's instructions.
+- "confidence" must measure how directly the notes state THIS specific task, not how sure
+  you are in general. Score each task separately; do not give every task the same score.
+  - 1.0: a note explicitly states the task, including what to do and roughly how long or often.
+    Example: the arthritis note says "two or three short, slow walks of 10-20 minutes", so
+    "Short slow walk, 15 min, daily" scores 1.0.
+  - about 0.5: you inferred the task from more general advice in a note.
+    Example: the arthritis note says "keeping a lean body weight" reduces joint pain, so
+    "Measure meals to manage weight" is an inference and scores about 0.5.
+  - Use values in between (e.g. 0.7-0.8) when the note states the task but you chose the
+    duration, time of day, or frequency yourself. Use below 0.5 for weak support.
 - Respond with JSON only, in exactly this shape:
 {
   "tasks": [
@@ -350,6 +372,7 @@ def apply_guardrails(suggestions: list[Any], result: CareSuggestionResult) -> No
             log.info("Rejected suggestion %s: %s", json.dumps(item, default=str), exc)
             continue
         result.accepted.append(task)
+        result.details[task.task_id] = {"reason": clean["reason"], "confidence": clean["confidence"]}
         log.info("Accepted task %r (confidence %.2f)", task.title, clean["confidence"])
 
 
@@ -377,6 +400,15 @@ def make_titles_distinct(tasks: list[Task]) -> None:
         )
 
 
+def log_owner_review(pet_name: str, approved: list[Task], rejected: list[Task]) -> None:
+    """Record the owner's approve/reject decision (the "Human check" stage)."""
+    log.info(
+        "Owner review for pet=%r: %d approved %s, %d rejected %s",
+        pet_name, len(approved), [t.title for t in approved],
+        len(rejected), [t.title for t in rejected],
+    )
+
+
 # --- Main entry point -------------------------------------------------------
 
 def suggest_care_tasks(pet: Pet, client: Any = None, notes: Optional[list[Note]] = None) -> CareSuggestionResult:
@@ -399,7 +431,7 @@ def suggest_care_tasks(pet: Pet, client: Any = None, notes: Optional[list[Note]]
 
     if not matched:
         result.model_message = (
-            f"No care notes match a {pet.species} with these details, so no tasks were suggested."
+            f"No care notes match this pet (species: {pet.species}), so no tasks were suggested."
         )
         log.info("No notes matched for pet=%r; skipping the Gemini call", pet.name)
         return result

@@ -3,7 +3,9 @@
 import json
 from types import SimpleNamespace
 
-from care_assistant import suggest_care_tasks
+import pytest
+
+from care_assistant import retrieve_notes, suggest_care_tasks
 from pawpal_system import Pet
 
 
@@ -62,3 +64,27 @@ def test_duplicate_titles_are_kept_and_made_distinct():
         "Brush coat",
     ]
     assert len(set(titles)) == len(titles)
+
+
+# --- Retriever ---------------------------------------------------------------
+
+def note_names(pet):
+    return [n.name for n in retrieve_notes(pet)]
+
+
+@pytest.mark.parametrize("needs", [[], [""], ["   "], ["no special needs"], ["none"]])
+def test_cat_without_special_needs_does_not_get_arthritis(needs):
+    names = note_names(Pet(name="Luna", species="cat", age=1, special_needs=needs))
+    assert "arthritis" not in names
+    assert "cat" in names
+
+
+def test_dog_with_arthritis_gets_arthritis_note():
+    names = note_names(Pet(name="Biscuit", species="dog", age=12, special_needs=["arthritis"]))
+    assert "arthritis" in names
+
+
+def test_no_notes_message_names_the_species():
+    result = suggest_care_tasks(Pet(name="Hop", species="other", age=2))
+    assert result.retrieved_notes == []
+    assert result.model_message == "No care notes match this pet (species: other), so no tasks were suggested."

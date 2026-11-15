@@ -2,9 +2,12 @@ from datetime import date
 
 import streamlit as st
 
+from care_assistant import LOW_CONFIDENCE, log_owner_review, suggest_care_tasks
 from pawpal_system import Owner, Pet, Scheduler, Task
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
+
+PRIORITY_BADGE = {"high": "🔴 High", "medium": "🟡 Medium", "low": "🟢 Low"}
 
 st.title("🐾 PawPal+")
 st.caption("Plan your pets' daily care around the time you actually have.")
@@ -46,12 +49,18 @@ with st.form("add_pet", clear_on_submit=True):
         species = st.selectbox("Species", ["dog", "cat", "other"])
     with col3:
         age = st.number_input("Age", min_value=0, max_value=40, value=1)
+    needs_text = st.text_input(
+        "Special needs (optional, comma-separated)", placeholder="arthritis, medication"
+    )
     if st.form_submit_button("Add pet"):
         if not pet_name.strip():
             st.error("Give your pet a name.")
         else:
+            needs = [n.strip() for n in needs_text.split(",") if n.strip()]
             try:
-                owner.add_pet(Pet(name=pet_name.strip(), species=species, age=int(age)))
+                owner.add_pet(
+                    Pet(name=pet_name.strip(), species=species, age=int(age), special_needs=needs)
+                )
                 st.success(f"Added {pet_name.strip()}.")
             except ValueError as err:
                 st.error(err)
@@ -60,6 +69,91 @@ if owner.pets:
     st.write("Your pets: " + ", ".join(f"**{p.name}** ({p.species})" for p in owner.pets))
 else:
     st.info("No pets yet. Add one above.")
+
+st.divider()
+
+# --- AI care suggestions -------------------------------------------------
+
+# pet name -> CareSuggestionResult. Kept in session_state so the suggestions
+# (and the owner's checkbox choices) survive Streamlit reruns until they're added.
+if "ai_suggestions" not in st.session_state:
+    st.session_state.ai_suggestions = {}
+suggestions: dict = st.session_state.ai_suggestions
+
+
+def approve_key(pet: Pet, task: Task) -> str:
+    """session_state key for one suggestion's approve checkbox."""
+    return f"approve_{pet.name}_{task.task_id}"
+
+
+def show_suggestions(pet: Pet) -> None:
+    """Render one pet's AI result: notes, accepted tasks with checkboxes, rejections, errors."""
+    result = suggestions[pet.name]
+
+    if result.error:
+        st.warning(result.error, icon="⚠️")
+        return
+
+    if result.retrieved_notes:
+        st.caption("Based on care notes: " + ", ".join(f"`{n}.md`" for n in result.retrieved_notes))
+
+    if not result.accepted:
+        st.info(result.model_message or "The assistant didn't suggest any tasks.", icon="ℹ️")
+    else:
+        if result.model_message:
+            st.caption(result.model_message)
+        st.write("Uncheck anything you don't want, then add the rest.")
+        for task in result.accepted:
+            info = result.details.get(task.task_id, {})
+            confidence = info.get("confidence", 0.0)
+            label = f"**{task.title}** · {task.duration_minutes} min · {PRIORITY_BADGE.get(task.priority, task.priority)}"
+            st.checkbox(label, value=True, key=approve_key(pet, task))
+            note = (
+                f"{(task.preferred_time or 'any time').capitalize()} · {task.frequency} · "
+                f"confidence {confidence:.2f}"
+            )
+            if confidence < LOW_CONFIDENCE:
+                note += " · ⚠️ low confidence"
+            st.caption(f"{note}  \n{info.get('reason', '')}")
+
+    if result.rejected:
+        with st.expander(f"{len(result.rejected)} suggestion(s) rejected by guardrails"):
+            for item in result.rejected:
+                suggestion = item["suggestion"]
+                title = suggestion.get("title", "(no title)") if isinstance(suggestion, dict) else "(not a task)"
+                st.markdown(f"- **{title}**: {item['reason']}")
+
+    if result.accepted and st.button("Add approved tasks", key=f"add_ai_{pet.name}", type="primary"):
+        approved = [t for t in result.accepted if st.session_state.get(approve_key(pet, t), True)]
+        declined = [t for t in result.accepted if t not in approved]
+        for task in approved:
+            pet.add_task(task)
+        log_owner_review(pet.name, approved, declined)
+        for task in result.accepted:
+            st.session_state.pop(approve_key(pet, task), None)
+        del suggestions[pet.name]
+        st.session_state.flash = f"Added {len(approved)} AI-suggested task(s) for {pet.name}."
+        st.rerun()
+
+
+st.subheader("AI care suggestions")
+if not owner.pets:
+    st.caption("Add a pet first, then the assistant can suggest care tasks from the care notes.")
+for pet in owner.pets:
+    with st.container(border=True):
+        details = f"{pet.species}, age {pet.age}"
+        if pet.special_needs:
+            details += ", " + ", ".join(pet.special_needs)
+        st.markdown(f"**{pet.name}** ({details})")
+        if st.button("Suggest care tasks with AI", key=f"suggest_{pet.name}"):
+            with st.spinner(f"Asking Gemini for {pet.name}'s care tasks..."):
+                try:
+                    suggestions[pet.name] = suggest_care_tasks(pet)
+                except Exception:  # suggest_care_tasks shouldn't raise, but never show a traceback
+                    suggestions.pop(pet.name, None)
+                    st.warning("Something went wrong while getting suggestions. Please try again.", icon="⚠️")
+        if pet.name in suggestions:
+            show_suggestions(pet)
 
 st.divider()
 
@@ -104,8 +198,6 @@ else:
 
 if "flash" in st.session_state:
     st.success(st.session_state.pop("flash"), icon="✅")
-
-PRIORITY_BADGE = {"high": "🔴 High", "medium": "🟡 Medium", "low": "🟢 Low"}
 
 
 def due_label(task: Task, today: date) -> str:
