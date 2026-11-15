@@ -23,7 +23,7 @@ The system runs in four stages:
 1. **Input:** the owner adds a pet (species, age, special needs) in the Streamlit UI (`app.py`).
 2. **Process (RAG):** `care_assistant.py` runs the AI pipeline.
    - The **retriever** selects the matching care notes from the `knowledge/` folder (for example, `dog.md` + `senior_pets.md` for a 12-year-old dog).
-   - The retrieved notes and the pet's details are sent to the **Claude API**, which is instructed to suggest tasks *only* based on those notes and return them as JSON.
+   - The retrieved notes and the pet's details are sent to the **Gemini API**, which is instructed to suggest tasks *only* based on those notes and return them as JSON.
    - **Guardrails** validate every suggestion (allowed priority, duration between 1 and 240 minutes, known category, required fields). Invalid suggestions and API errors are logged and never reach the schedule.
 3. **Human check:** the owner reviews the suggested tasks and approves or rejects each one.
 4. **Output:** approved tasks become real `Task` objects in the existing scheduler (`pawpal_system.py`), which builds the daily plan, flags conflicts, and explains its choices.
@@ -34,7 +34,7 @@ The system runs in four stages:
 
 ## ⚙️ Setup Instructions
 
-**Requirements:** Python 3.10+ and an Anthropic API key.
+**Requirements:** Python 3.10+ and a free Gemini API key (from aistudio.google.com).
 
 ```bash
 # 1. Clone the repo
@@ -50,7 +50,7 @@ pip install -r requirements.txt
 
 # 4. Add your API key
 cp .env.example .env
-# then open .env and set ANTHROPIC_API_KEY=your-key-here
+# then open .env and set GEMINI_API_KEY=your-key-here
 
 # 5. Run the app
 streamlit run app.py

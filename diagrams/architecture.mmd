@@ -8,7 +8,7 @@ flowchart TD
     subgraph PROCESS [2. Process - care_assistant.py]
         R["Retriever: finds matching care notes"]
         KB[("knowledge/ pet-care notes")]
-        LLM["Claude API: suggests care tasks"]
+        LLM["Gemini API: suggests care tasks"]
         G["Guardrails: validate priority, duration, category"]
         R <--> KB
         R -->|"notes + pet info"| LLM
@@ -41,4 +41,3 @@ flowchart TD
     T1 -.->|checks| G
     T1 -.->|checks| S
     T2 -.->|checks| LLM
-    
