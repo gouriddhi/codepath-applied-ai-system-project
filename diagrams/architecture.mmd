@@ -1,27 +1,44 @@
-flowchart LR
-    U([Pet owner]) -->|adds pet: species, age, special needs| UI[Streamlit UI - app.py]
+flowchart TD
+    %% PawPal+ with RAG care assistant
 
-    subgraph RAG [AI care assistant - care_assistant.py]
-        R[Retriever: picks matching notes] --> KB[(knowledge/ pet-care notes)]
-        KB --> R
-        R -->|retrieved notes + pet info| LLM[Claude API]
-        LLM -->|suggested tasks as JSON| G[Guardrails: validate priority, duration, category]
+    subgraph INPUT [1. Input]
+        U([Pet owner]) -->|"pet info: species, age, special needs"| UI["Streamlit UI - app.py"]
     end
 
-    UI -->|request suggestions| R
-    G -->|valid tasks| UI
-    G -.->|rejected / API error| LOG[(logs/pawpal.log)]
-    R -.-> LOG
-    LLM -.-> LOG
-
-    UI -->|owner approves tasks| CORE
-    subgraph CORE [Logic layer - pawpal_system.py]
-        O[Owner] --> P[Pet] --> T[Task]
-        O --> S[Scheduler: sort, assign slots, detect conflicts, explain]
+    subgraph PROCESS [2. Process - care_assistant.py]
+        R["Retriever: finds matching care notes"]
+        KB[("knowledge/ pet-care notes")]
+        LLM["Claude API: suggests care tasks"]
+        G["Guardrails: validate priority, duration, category"]
+        R <--> KB
+        R -->|"notes + pet info"| LLM
+        LLM -->|"tasks as JSON"| G
     end
 
-    S -->|daily plan + warnings| UI
-    UI -->|shows schedule| U
-    TESTS[pytest - tests/] -.->|verifies| CORE
-    TESTS -.->|verifies| G
+    subgraph HUMAN [3. Human check]
+        H{"Owner reviews suggestions"}
+    end
+
+    subgraph OUTPUT [4. Output - pawpal_system.py]
+        S["Scheduler: builds daily plan, flags conflicts"]
+        PLAN["Daily care plan shown in UI"]
+        S --> PLAN
+    end
+
+    subgraph TESTING [Testing and monitoring]
+        T1["pytest: guardrail + scheduler tests"]
+        T2["eval script: runs sample pets, checks AI output"]
+        LOG[("logs/pawpal.log")]
+    end
+
+    UI --> R
+    G -->|"valid tasks"| H
+    G -.->|"rejected tasks / API errors"| LOG
+    H -->|"approve"| S
+    H -->|"reject"| LOG
+    PLAN --> U
+
+    T1 -.->|checks| G
+    T1 -.->|checks| S
+    T2 -.->|checks| LLM
     
