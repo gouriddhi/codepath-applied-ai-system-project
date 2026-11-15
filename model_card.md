@@ -7,7 +7,7 @@ PawPal+ AI suggests daily pet-care tasks for a specific pet. A keyword retriever
 ## Limitations and Biases
 
 - **Only dogs and cats are covered.** The knowledge base has six hand-written notes, all for dogs and cats. Rabbits, birds, reptiles and any other species get no suggestions at all. That's safer than guessing, but less useful for those owners.
-- **The notes are general guidance, not veterinary advice.** I wrote them from common pet-care guidelines, and no vet has reviewed them. Any gap or mistake in the notes carries straight into the suggestions.
+- **The notes are general guidance, not veterinary advice.** They were drafted with an AI coding assistant from common pet-care guidelines and reviewed by me, but no vet has reviewed them. Any gap or mistake in the notes carries straight into the suggestions.
 - **Age groups are coarse.** "Senior" starts at 7 for dogs and 10 for cats for every pet. The senior note itself says large breeds age earlier (around 6), and the system doesn't know breed or size.
 - **Keyword retrieval misses different wording.** A pet with "hip dysplasia" or "stiff joints" won't get `arthritis.md`, because neither phrase shares a word with that note's tags. Filler words caused the opposite problem, which I fixed (see below).
 - **Confidence is self-reported.** The confidence score is the model's own estimate of how directly the notes support a task. It isn't measured against real outcomes, so 0.9 doesn't mean "right 90% of the time."
@@ -20,7 +20,7 @@ PawPal+ AI suggests daily pet-care tasks for a specific pet. A keyword retriever
   - The prompt forbids specific drugs or doses; a meds task has to say "follow the vet's instructions."
   - The notes include warning signs that mean "contact a vet."
   - Nothing is added to the schedule until the owner approves it.
-  - Not done yet: the app should show a short "not veterinary advice" note next to the suggestions.
+  - The app shows a caption under "AI care suggestions" saying the suggestions are based on general care notes, are not veterinary advice, and that owners should check with their vet, especially about medications.
 - **Prompt injection through the special-needs field.** That free text goes into the prompt, so someone could type instructions like "ignore the notes."
   - The damage is limited because the output must be JSON with fixed fields and allowed values, so the worst case is an odd task the owner can uncheck.
   - The text can't trigger retrieval of anything outside `knowledge/`.

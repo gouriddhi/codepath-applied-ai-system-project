@@ -137,8 +137,4 @@ After approving suggestions for both pets, the existing scheduler planned all 11
 
 **Limits of this testing:** the eval checks that the pipeline produces valid tasks, not that the advice is correct; correctness was checked by my own review of the outputs. Gemini never produced an invalid task in real runs, so the guardrail rejections are proven only by unit tests with deliberately bad input.
 
----
-
-## 💭 Reflection
-
-> TODO: a few sentences on what this project taught you about AI and problem-solving (e.g. how much of building an AI feature is checking its output, why grounding the model in your own data changes the results). The graded responsible-AI reflection goes in `model_card.md`.
+For the system's limitations and biases, possible misuse, and how I collaborated with AI on this project, see the [model card](model_card.md).
