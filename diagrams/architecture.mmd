@@ -1,8 +1,20 @@
 flowchart LR
-    U([Pet owner]) -->|enters owner, pets, tasks| UI[Streamlit UI - app.py]
-    CLI[CLI demo - main.py] --> S
+    U([Pet owner]) -->|adds pet: species, age, special needs| UI[Streamlit UI - app.py]
 
-    UI --> O
+    subgraph RAG [AI care assistant - care_assistant.py]
+        R[Retriever: picks matching notes] --> KB[(knowledge/ pet-care notes)]
+        KB --> R
+        R -->|retrieved notes + pet info| LLM[Claude API]
+        LLM -->|suggested tasks as JSON| G[Guardrails: validate priority, duration, category]
+    end
+
+    UI -->|request suggestions| R
+    G -->|valid tasks| UI
+    G -.->|rejected / API error| LOG[(logs/pawpal.log)]
+    R -.-> LOG
+    LLM -.-> LOG
+
+    UI -->|owner approves tasks| CORE
     subgraph CORE [Logic layer - pawpal_system.py]
         O[Owner] --> P[Pet] --> T[Task]
         O --> S[Scheduler: sort, assign slots, detect conflicts, explain]
@@ -10,8 +22,6 @@ flowchart LR
 
     S -->|daily plan + warnings| UI
     UI -->|shows schedule| U
-    TESTS[pytest - tests/test_pawpal.py] -.->|verifies| CORE
-
-    AI[AI component - planned]
-    UI -.-> AI
-    AI -.->|suggestions| S
+    TESTS[pytest - tests/] -.->|verifies| CORE
+    TESTS -.->|verifies| G
+    
