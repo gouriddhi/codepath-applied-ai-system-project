@@ -66,58 +66,76 @@ pytest
 python eval_assistant.py
 ```
 
-> TODO: confirm these file names and commands match the final code before submitting.
-
 ---
 
 ## 💬 Sample Interactions
 
-> TODO: fill in with **real** runs of the finished app. For each one, paste the input, the notes that were retrieved, and the tasks the AI suggested (and which the guardrails accepted or rejected). Screenshots can go in `assets/`.
-
 **Example 1: Senior dog with arthritis**
-- Input: `Biscuit, dog, age 12, special needs: arthritis`
+- Input: `Baby, dog, age 12, special needs: arthritis`
 - Retrieved notes: `arthritis.md`, `dog.md`, `senior_pets.md`
-- AI suggestions: 9 tasks
-  - Short slow walk, 15 min, high (x3)
-  - Feeding, 10 min, high (x2)
-  - Refill and rinse water bowl, 5 min, medium
-  - Enrichment activity, 10 min, medium
-  - Brush hips and back, 5 min, medium
-  - Health monitoring note, 5 min, low
-- Guardrail result: 9 accepted, 0 rejected
-- Observation: the suggestions matched the senior and arthritis guidance (short, low-impact walks and gentle brushing). However, repeated tasks came back with identical titles, so I added a guardrail that labels duplicates by time of day or number, e.g. "Short slow walk (morning)" or "Feeding 1/2".
+- AI output (all passed guardrails, owner approved): short slow walks (morning, evening) at 15 min, refill water bowl, brush hips and back (weekly, confidence 0.80), daily note of appetite/water/energy (low priority)
+- Result: tasks added to the schedule and planned with no conflicts
+
+![Senior dog suggestions](assets/sample1_senior_dog.png)
 
 **Example 2: Young cat, no special needs**
-- Input: `Luna, cat, age 1`
-- Retrieved notes: TODO
-- AI suggestions: TODO
-- Guardrail result: TODO
+- Input: `Luna, cat, age 1, no special needs`
+- Retrieved notes: `cat.md` only
+- AI output: two play sessions, feeding (confidence 0.80), fresh water, litter scooping, weekly brushing (confidence 0.70, the AI noted it was assuming coat type)
 
-**Example 3: Guardrails in action**
-- Input: TODO (e.g. a species with no matching notes, or a run where the AI returned an invalid duration)
-- What happened: TODO (e.g. "no notes found; assistant declined to guess" or "1 of 4 suggestions rejected: duration 600 min exceeds limit")
+![Young cat suggestions](assets/sample2_young_cat_fixed.png)
+
+**Example 3: Guardrail: unknown species**
+- Input: `junior, species: other, age 1`
+- Result: "No care notes match this pet (species: other), so no tasks were suggested." No API call was made and no tasks were invented.
+
+![No matching notes](assets/sample3_no_notes.png)
+
+**End-to-end: AI tasks in the real schedule**
+After approving suggestions for both pets, the existing scheduler planned all 11 AI-suggested tasks (105 minutes) with 0 conflicts and 0 skipped, each with a reason for its time slot.
+
+![Generated schedule](assets/sample5_schedule.png)
 
 ---
 
 ## 🧠 Design Decisions
 
-- **Simple, transparent retrieval over vector embeddings.** The knowledge base is a small set of hand-written markdown notes, so the retriever matches on species, age group, and special-needs keywords. This is easy to test, needs no extra infrastructure, and makes it obvious *why* a note was retrieved. Trade-off: it won't find notes that use different wording than the pet's details, and it won't scale to a large knowledge base the way embeddings would.
-- **The AI suggests; the scheduler decides.** Claude only proposes tasks. The existing, already-tested `Scheduler` still decides when things happen. This keeps the AI's job small and checkable, and reuses code that was already tested. Trade-off: the AI can't directly optimize the schedule itself.
+- **Simple, transparent retrieval over vector embeddings.** The knowledge base is a small set of hand-written markdown notes, so the retriever matches on species, age group, and special-needs keywords. This is easy to test, needs no extra infrastructure, and makes it obvious *why* a note was retrieved. Trade-off: it won't find notes that use different wording than the pet's details, and it won't scale to a large knowledge base the way embeddings would. Keyword matching also produced a real bug: an owner typing "no special needs" matched `arthritis.md`'s `special-needs` tag on the word "special". The fix was to ignore filler words ("no", "none", "special", "needs") when matching, plus a regression test. A similar over-match (every senior pet getting arthritis advice because the note was tagged `senior`) was fixed by removing that tag, so arthritis guidance now only comes from a stated need.
+- **A free-tier Flash-Lite model.** The assistant uses `gemini-3.5-flash-lite` (set once as `MODEL_NAME` in `care_assistant.py`). The task is short, structured JSON based on a few notes, so a small, fast, free model is enough. I first used `gemini-2.5-flash`, but it returned a 404 for new API users; the error handling showed a friendly warning instead of crashing, and the log made the cause clear. Keeping the model name in one constant made the switch a one-line change.
+- **No API call when no notes match.** If the retriever finds nothing (e.g. a rabbit or an empty species), the assistant returns "No care notes match this pet" without calling Gemini at all. That makes it impossible for the model to invent advice with nothing to ground it, and it saves free-tier quota. Trade-off: unsupported species get no suggestions, not even generic ones.
+- **Relabel duplicate titles instead of dropping them.** Gemini sometimes suggests the same task several times (e.g. "Short slow walk" three times for a senior dog), which is often intended, because the notes recommend two or three short walks a day. Rather than deleting repeats, the guardrails keep them all and make the titles distinct: by time of day when they differ ("Short slow walk (morning)") or numbered otherwise ("Feeding 1/2"). The owner can still uncheck any they don't want.
+- **The AI suggests; the scheduler decides.** Gemini only proposes tasks. The existing, already-tested `Scheduler` still decides when things happen. This keeps the AI's job small and checkable, and reuses code that was already tested. Trade-off: the AI can't directly optimize the schedule itself.
 - **Structured JSON output + validation.** Asking for JSON with fixed fields means every suggestion can be checked against the same rules as a hand-entered task. Anything that fails validation is dropped and logged rather than "fixed" silently.
 - **Human approval before anything is scheduled.** Pet care involves medication and health, so the owner always reviews AI suggestions instead of having them added automatically. Trade-off: one extra click for the user.
 - **Grounded prompts.** The prompt tells the model to base suggestions only on the retrieved notes and to say so when the notes don't cover a situation, which reduces made-up advice.
-
-> TODO: add or adjust anything you changed while building.
 
 ---
 
 ## 🧪 Testing Summary
 
-> TODO: fill in after running the tests and the eval script. Include real numbers, for example:
-> - `pytest`: X tests passing (scheduler tests from Module 2 + new guardrail/retriever tests)
-> - Evaluation: X of Y sample pets produced only valid tasks; X suggestions rejected by guardrails and why
-> - What didn't work at first and how you fixed it
-> - What you learned from testing the AI part vs. the regular code
+**Automated tests:** `pytest` runs 68 tests and all pass (48 original scheduler tests + 20 care-assistant tests). The AI tests use a fake Gemini client, so they need no API key. They cover retrieval, guardrails (duration 0 and 600, priority "urgent", unknown category, missing title, confidence 1.5), duplicate titles, malformed JSON, 429 rate limits, and a missing API key.
+
+**Evaluation script** (`python eval_assistant.py`, real Gemini calls):
+
+| Pet | Retrieved notes | Accepted | Rejected | Avg confidence | Result |
+|---|---|---|---|---|---|
+| Senior dog with arthritis | arthritis, dog, senior_pets | 8 | 0 | 0.96 | Pass |
+| Young cat, no needs | puppies_kittens | 4 | 0 | 0.95 | Pass |
+| Puppy | puppies_kittens | 5 | 0 | 0.84 | Pass |
+| Senior cat on medication | cat, medications, senior_pets | 7 | 0 | 0.86 | Pass |
+| Rabbit (no notes) | (none) | 0 | 0 | - | Pass |
+| Empty species | (none) | 0 | 0 | - | Pass |
+
+**6/6 passed, average confidence 0.90 across 24 accepted tasks.**
+
+**What testing caught (and how it was fixed):**
+- **Model retired:** `gemini-2.5-flash` returned a 404 for new users. The error handling caught it and the log showed the cause, so I switched to `gemini-3.5-flash-lite`.
+- **Duplicate titles:** the AI returned "Short slow walk" 3 times. I added a guardrail that labels repeats by time of day or number.
+- **Retrieval bug:** a 1-year-old cat retrieved `arthritis.md` because its special needs were typed as "no special needs", and the word "special" matched the note's `special-needs` tag. Filler words like "no", "none", "special" and "needs" no longer count as matches. Fixed, with a regression test.
+- **Over-retrieval:** every senior pet got arthritis advice because the note was tagged `senior`. I removed the tag so arthritis guidance only comes from a stated need, and added a test.
+- **Uninformative confidence:** every score was 1.00 at first. After I rewrote the prompt with examples, inferred tasks scored 0.70–0.80.
+
+**Limits of this testing:** the eval checks that the pipeline produces valid tasks, not that the advice is correct; correctness was checked by my own review of the outputs. Gemini never produced an invalid task in real runs, so the guardrail rejections are proven only by unit tests with deliberately bad input.
 
 ---
 

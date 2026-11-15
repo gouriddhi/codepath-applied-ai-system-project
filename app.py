@@ -137,6 +137,10 @@ def show_suggestions(pet: Pet) -> None:
 
 
 st.subheader("AI care suggestions")
+st.caption(
+    "AI suggestions are based on general care notes and are not veterinary advice. "
+    "Check with your vet, especially about medications."
+)
 if not owner.pets:
     st.caption("Add a pet first, then the assistant can suggest care tasks from the care notes.")
 for pet in owner.pets:

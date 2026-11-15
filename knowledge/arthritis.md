@@ -1,6 +1,6 @@
 ---
 species: dog, cat
-tags: arthritis, joint pain, senior, special-needs, mobility
+tags: arthritis, joint pain, special-needs, mobility
 ---
 
 # Arthritis Care Guidelines
