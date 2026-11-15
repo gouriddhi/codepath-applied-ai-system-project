@@ -1,0 +1,17 @@
+flowchart LR
+    U([Pet owner]) -->|enters owner, pets, tasks| UI[Streamlit UI - app.py]
+    CLI[CLI demo - main.py] --> S
+
+    UI --> O
+    subgraph CORE [Logic layer - pawpal_system.py]
+        O[Owner] --> P[Pet] --> T[Task]
+        O --> S[Scheduler: sort, assign slots, detect conflicts, explain]
+    end
+
+    S -->|daily plan + warnings| UI
+    UI -->|shows schedule| U
+    TESTS[pytest - tests/test_pawpal.py] -.->|verifies| CORE
+
+    AI[AI component - planned]
+    UI -.-> AI
+    AI -.->|suggestions| S
