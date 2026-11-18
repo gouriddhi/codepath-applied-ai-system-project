@@ -151,7 +151,9 @@ class RawClient:
 
 def test_malformed_json_returns_empty_result_with_error():
     result = suggest_care_tasks(BISCUIT, client=RawClient(text='{"tasks": [ oops'))
-    assert result.accepted == [] and "not valid JSON" in result.error
+    assert result.accepted == []
+    assert result.error is not None
+    assert "not valid JSON" in result.error
 
 
 def test_rate_limit_429_returns_friendly_error():
@@ -159,7 +161,9 @@ def test_rate_limit_429_returns_friendly_error():
 
     exc = errors.ClientError(429, {"error": {"message": "Resource exhausted"}})
     result = suggest_care_tasks(BISCUIT, client=RawClient(exc=exc))
-    assert result.accepted == [] and "rate limit" in result.error.lower()
+    assert result.accepted == []
+    assert result.error is not None
+    assert "rate limit" in result.error.lower()
 
 
 def test_missing_api_key_returns_error_without_calling_gemini(monkeypatch):
@@ -170,6 +174,7 @@ def test_missing_api_key_returns_error_without_calling_gemini(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "")
     result = suggest_care_tasks(BISCUIT)
     assert result.accepted == []
+    assert result.error is not None
     assert "GEMINI_API_KEY is not set" in result.error
 
 

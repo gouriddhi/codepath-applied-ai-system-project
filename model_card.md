@@ -47,3 +47,5 @@ I built this with Claude Code as a coding assistant. I wrote the plan in steps (
 **A suggestion I changed:** the model choice. Claude's first version used `gemini-2.5-flash`. When I tested, that model returned a 404 for new API users, so I replaced it with `gemini-3.5-flash-lite`. The suggestion wasn't careless, because the name was kept in one constant, which made the switch a one-line change. But it didn't fit my situation as a new free-tier user, so I didn't keep it as written.
 
 **Another correction:** when I reported the cat retrieval bug, I guessed an empty string was matching every note. Claude checked the log instead and found the real cause: the phrase "no special needs" matched the `special-needs` tag. My guessed fix wouldn't have solved it. That taught me to check the log before assuming why something broke.
+
+
